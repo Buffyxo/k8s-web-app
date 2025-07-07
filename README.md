@@ -8,7 +8,9 @@ These are the web application components which will be containerized and deploye
 
 In this project, I will showcase my progress as a brief step-by-step documentation in an effort to learn Kubernetes for a production-style environment. The infrastructure will be built at pod-level with future plans to scale it to a multi-node cluster for further experimentation. The full instructions will be added to my blog once everything is working. 
 
-## Initial VPS settings
+## Step 1: VPS and Kubernetes Cluster Setup
+
+### 1.1 Initial VPS settings
 - Install necessary packages and disable swap
 ```
 apt-get update && apt-get upgrade
@@ -28,7 +30,7 @@ sysctl --system
 ```
 
 
-## Setting up Docker
+### 1.2 Setting up Docker
 - Install `docker-ce`, `docker-ce-cli`, `containerd.io`.
 ```
 curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -49,7 +51,7 @@ usermod -aG docker $USER
 ```
 
 
-## Kubernetes Installation
+### 1.3 Kubernetes Installation
 - Add Kubernetes repository and install `kubeadm`, `kubelet`, `kubectl`.
 ```
 curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
@@ -58,7 +60,7 @@ apt-get update
 apt-get install kubeadm kubelet kubectl
 ```
 
-## Cluster Initialization and Setup
+### 1.4 Cluster Initialization and Setup
 - Initialize:
 ```
 kubeadm init --pod-network-cidr=10.244.0.0/16
@@ -87,7 +89,7 @@ crictl -r unix:///var/run/containerd/containerd.sock info
 mkdir -p /etc/containerd
 containerd config default | tee /etc/containerd/config.toml
 ```
-###### 2. Ensure that CRI is not disabled (remove cri from `disabled_plugins = ["cri"]`.
+###### 2. Ensure that CRI is not disabled (remove cri from `disabled_plugins = ["cri"]`).
 ```
 nano /etc/containerd/config.toml
 ```
@@ -125,24 +127,44 @@ vm.dirty_background_ratio=5
 ```
 ---
 
-## Install Container Network Interface (CNI) Plugin - Using Flannel
+### 1.5 Install Container Network Interface (CNI) Plugin - Using Flannel
 ```
 kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/v0.22.0/Documentation/kube-flannel.yml
 kubectl get pods -n kube-flannel
 ```
 
-## Create and verify namespaces for prod and dev
+### 1.6 Create and verify namespaces for prod and dev
 ```
 kubectl create namespace dev
 kubectl create namespace prod
 kubectl get namespaces
 ```
 
-## Check cluster health
+### 1.7 Check cluster health
 ```
 kubectl get nodes
 kubectl get pods -A
 ```
 
-## Security and Sensitive Files
+### 1.8 Security and Sensitive Files
 - Included in .gitignore: `admin.conf`, `.kube/config`
+
+
+## Step 2: Ingress Controller Setup
+### 2.1 NGINX Ingress Installation
+```
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
+kubectl get pods -n ingress-nginx
+```
+
+### 2.2 Open ports in VPS Firewall
+- Get the nodeport (30000-32767)
+```
+kubectl get svc -n ingress-nginx
+```
+- Open the nodeport
+```
+sudo ufw allow <NODEPORT>
+sudo ufw allow 80
+sudo ufw allow 443
+```
