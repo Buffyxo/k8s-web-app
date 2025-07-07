@@ -1,0 +1,21 @@
+# Kubernetes sensitive files
+.kube/config
+/etc/kubernetes/*.conf
+/k8s/*-secrets.yaml
+*.key
+*.pem
+
+# Laravel
+/backend/.env
+/backend/.env.backup
+/backend/storage/*.key
+
+# Frontend
+/frontend/.env
+/frontend/node_modules/
+/frontend/dist/
+
+# General
+*.env
+*.secret
+*.log
