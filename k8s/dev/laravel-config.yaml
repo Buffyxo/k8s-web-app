@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: laravel-config
+  namespace: dev
+data:
+  APP_URL: "app-url"
+  DB_HOST: "db-host"
+  DB_DATABASE: "db-database"

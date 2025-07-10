@@ -9,6 +9,7 @@
 /backend/.env
 /backend/.env.backup
 /backend/storage/*.key
+/backend/vendor
 
 # Frontend
 /frontend/.env

@@ -150,7 +150,7 @@ kubectl get pods -A
 - Included in .gitignore: `admin.conf`, `.kube/config`
 
 
-## Step 2: Ingress Controller Setup and Create YAML Manifests
+## Step 2: Ingress Controller Setup and Create MariaDB secrets and YAML Manifests
 ### 2.1 NGINX Ingress Installation
 ```
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
@@ -158,11 +158,11 @@ kubectl get pods -n ingress-nginx
 ```
 
 ### 2.2 Open ports in VPS Firewall
-- Get the nodeport (30000-32767)
+- Get the nodeport (30000-32767) for HTTP
 ```
 kubectl get svc -n ingress-nginx
 ```
-- Open the nodeport
+- Open the firewall ports
 ```
 sudo ufw allow <NODEPORT>
 sudo ufw allow 80
@@ -173,10 +173,15 @@ sudo ufw allow 443
 ```
 kubectl create secret generic mariadb-secrets --namespace dev \
   --from-literal=db-user='YOUR-USER' \
-  --from-literal=db-password='YOUR-PASSWORD'
+  --from-literal=db-password='YOUR-PASSWORD' \
+  --from-literal=db-host='mariadb-service.dev' \
+  --from-literal=db-database='DATABASE-NAME' \
+  --from-literal=app-url='http://dev.domain.com'
+
 ```
 
-### 2.4 Manifest files
+### 2.4 Manifest files for MariaDB (dev Namespace)
+
 - MariaDB PVC (k8s/dev/mariadb-pvc.yaml)
 ```
 apiVersion: v1
@@ -224,7 +229,7 @@ spec:
               name: mariadb-secrets
               key: db-password
         - name: MYSQL_DATABASE
-          value: blog_dev
+          value: db-database
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
             secretKeyRef:
@@ -278,3 +283,183 @@ kubectl apply -f k8s/dev/mariadb-service.yaml -n dev
 ```
 
 - Verify that the MariaDB pod is `running`, the PVC shows `bound`, and that the MariaDB service is accessible within the Kubernetes cluster (10.96.0.0/12 range).
+```
+kubectl get pods -n dev
+kubectl get pvc -n dev
+kubectl get svc -n dev
+```
+
+## Step 3: Develop and Containerize Laravel API
+
+### 3.1 Install PHP and Composer
+```
+apt-get update
+apt-get install -y php8.2 php8.2-cli php8.2-mbstring php8.2-mysql php8.2-bcmath php8.2-zip php8.2-curl php8.2-xml unzip
+curl -sS https://getcomposer.org/installer | php
+mv composer.phar /usr/local/bin/composer
+```
+
+### 3.2 Create the Laravel Backend
+
+- Create the /backend directory and install Laravel
+```
+mkdir -p backend
+cd backend
+composer create-project laravel/laravel .
+php artisan --version
+```
+
+- Copy .env.example to .env
+```
+cp .env.example .env
+```
+
+- Edit .env with the MariaDB credentials
+```
+sed -i 's/DB_CONNECTION=.*/DB_CONNECTION=mysql/' .env
+sed -i 's/DB_HOST=.*/DB_HOST=db-host/' .env
+sed -i 's/DB_PORT=.*/DB_PORT=3306/' .env
+sed -i 's/DB_DATABASE=.*/DB_DATABASE=db-database/' .env
+sed -i 's/DB_USERNAME=.*/DB_USERNAME=db-user/' .env
+sed -i 's/DB_PASSWORD=.*/DB_PASSWORD=db-password/' .env
+```
+
+- Generate the app key:
+```
+php artisan key:generate
+```
+
+- Create Dockerfile to containerize Laravel
+```
+cat << EOF > Dockerfile
+# Use PHP 8.1 with FPM for Laravel
+FROM php:8.2-fpm
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libpng-dev libjpeg-dev libfreetype6-dev libxml2-dev \
+    libzip-dev unzip git \
+    && docker-php-ext-install pdo_mysql gd xml zip
+
+# Install Composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+# Set working directory
+WORKDIR /var/www
+
+# Copy application code
+COPY . .
+
+# Install Laravel dependencies
+RUN composer install --optimize-autoloader --no-dev
+
+# Set permissions
+RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
+
+# Expose port for PHP-FPM
+EXPOSE 9000
+
+# Start PHP-FPM
+CMD ["php-fpm"]
+EOF
+```
+
+- Create a .dockerignore 
+```
+echo -e "vendor\nnode_modules\n.env" > .dockerignore
+```
+
+- Build and push the container
+```
+docker build -t your-username/laravel:dev .
+docker push your-username/laravel:dev
+```
+
+### 3.3 Kubernetes Manifest files for Laravel (dev Namespace)
+
+- Laravel Deployment (k8s/dev/laravel-deployment.yaml). Replace 'YOUR-USERNAME'
+
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: laravel
+  namespace: dev
+spec:
+  selector:
+    matchLabels:
+      app: laravel
+  template:
+    metadata:
+      labels:
+        app: laravel
+    spec:
+      containers:
+      - name: laravel
+        image: YOUR-USERNAME/laravel:dev
+        env:
+        - name: APP_URL
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-secrets
+              key: app-url
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-secrets
+              key: db-host
+        - name: DB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-secrets
+              key: db-database
+        - name: DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-secrets
+              key: db-user
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-secrets
+              key: db-password
+        ports:
+        - containerPort: 9000
+        resources:
+          limits:
+            memory: "500Mi"
+            cpu: "500m"
+          requests:
+            memory: "200Mi"
+            cpu: "200m"
+```
+- Laravel Service (k8s/dev/laravel-service.yaml)
+
+```
+apiVersion: v1
+kind: Service
+metadata:
+  name: laravel-service
+  namespace: dev
+spec:
+  selector:
+    app: laravel
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 9000
+  type: ClusterIP
+```
+
+- Deploy to Kubernetes:
+```
+kubectl apply -f k8s/dev/laravel-config.yaml -n dev
+kubectl apply -f k8s/dev/laravel-deployment.yaml -n dev
+kubectl apply -f k8s/dev/laravel-service.yaml -n dev
+```
+
+- Steps to verify
+```
+kubectl get pods -n dev
+kubectl get svc -n dev
+```

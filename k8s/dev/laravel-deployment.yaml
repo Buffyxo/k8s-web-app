@@ -1,43 +1,48 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mariadb
+  name: laravel
   namespace: dev
 spec:
   selector:
     matchLabels:
-      app: mariadb
+      app: laravel
   template:
     metadata:
       labels:
-        app: mariadb
+        app: laravel
     spec:
       containers:
-      - name: mariadb
-        image: mariadb:10.11
+      - name: laravel
+        image: buffyxo/laravel:dev
         env:
-        - name: MYSQL_USER
+        - name: APP_URL
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-secrets
+              key: app-url
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-secrets
+              key: db-host
+        - name: DB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: mariadb-secrets
+              key: db-database
+        - name: DB_USERNAME
           valueFrom:
             secretKeyRef:
               name: mariadb-secrets
               key: db-user
-        - name: MYSQL_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: mariadb-secrets
-              key: db-password
-        - name: MYSQL_DATABASE
-          value: db-database
-        - name: MYSQL_ROOT_PASSWORD
+        - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: mariadb-secrets
               key: db-password
         ports:
-        - containerPort: 3306
-        volumeMounts:
-        - name: mariadb-data
-          mountPath: /var/lib/mysql
+        - containerPort: 9000
         resources:
           limits:
             memory: "500Mi"
@@ -45,7 +50,3 @@ spec:
           requests:
             memory: "200Mi"
             cpu: "200m"
-      volumes:
-      - name: mariadb-data
-        persistentVolumeClaim:
-          claimName: mariadb-pvc
