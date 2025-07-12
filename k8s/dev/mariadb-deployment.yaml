@@ -1,3 +1,4 @@
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,38 +14,38 @@ spec:
         app: mariadb
     spec:
       containers:
-      - name: mariadb
-        image: mariadb:10.11
-        env:
+      - env:
         - name: MYSQL_USER
           valueFrom:
             secretKeyRef:
-              name: mariadb-secrets
               key: db-user
+              name: mariadb-secrets
         - name: MYSQL_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: mariadb-secrets
               key: db-password
+              name: mariadb-secrets
         - name: MYSQL_DATABASE
           value: db-database
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: mariadb-secrets
               key: db-password
+              name: mariadb-secrets
+        image: mariadb:10.11
+        name: mariadb
         ports:
         - containerPort: 3306
-        volumeMounts:
-        - name: mariadb-data
-          mountPath: /var/lib/mysql
         resources:
           limits:
-            memory: "500Mi"
-            cpu: "500m"
+            cpu: 500m
+            memory: 500Mi
           requests:
-            memory: "200Mi"
-            cpu: "200m"
+            cpu: 200m
+            memory: 200Mi
+        volumeMounts:
+        - mountPath: /var/lib/mysql
+          name: mariadb-data
       volumes:
       - name: mariadb-data
         persistentVolumeClaim:

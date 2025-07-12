@@ -463,3 +463,132 @@ kubectl apply -f k8s/dev/laravel-service.yaml -n dev
 kubectl get pods -n dev
 kubectl get svc -n dev
 ```
+
+
+### 3.4 Create the Vue Frontend
+
+- Node.js and Vue CLI 
+```
+apt-get update
+apt-get install -y nodejs npm
+npm install -g @vue/cli
+```
+
+- Create the Vue.js app (Vue 3 - Babel, ESLint)
+```
+mkdir frontend
+cd frontend
+vue create . --no-git
+```
+
+- Docker container for Vue.js
+```
+cat << EOF > Dockerfile
+FROM node:18 as build
+WORKDIR /app
+COPY . .
+RUN npm install
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+EOF
+```
+
+- Create .dockerignore 
+```
+echo -e "node_modules\nnpm-debug.log\ndist\n.env" > .dockerignore
+```
+
+- Build and push the container
+```
+docker build -t YOUR-USERNAME/frontend:dev .
+docker push YOUR-USERNAME/frontend:dev
+```
+
+### 3.5 Kubernetes Manifest files for Frontend Vue.js App (dev Namespace)
+
+- ConfigMap (k8s/dev/frontend-config.yaml)
+```
+cat << EOF > k8s/dev/frontend-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+name: frontend-config
+namespace: dev
+data:
+VUE_APP_API_URL: "http://laravel-service.dev/laravel"
+EOF
+```
+
+- Frontend deployment (k8s/dev/frontend-deployment.yaml)
+```
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: dev
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: buffyxo/frontend:dev
+        env:
+        - name: VUE_APP_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: frontend-config
+              key: VUE_APP_API_URL
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            memory: "300Mi"
+            cpu: "300m"
+          requests:
+            memory: "100Mi"
+            cpu: "100m"
+
+```
+
+- Service (k8s/dev/frontend-service.yaml)
+```
+cat << EOF > k8s/dev/frontend-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: dev
+spec:
+  selector:
+    app: frontend
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+  type: ClusterIP
+EOF
+```
+
+- Apply the manifests and deploy to Kubernetes
+```
+kubectl apply -f k8s/dev/frontend-config.yaml -n dev
+kubectl apply -f k8s/dev/frontend-deployment.yaml -n dev
+kubectl apply -f k8s/dev/frontend-service.yaml -n dev
+```
+
+- Verify that the pods and services are created and running
+```
+kubectl get pods -n dev
+kubectl get svc -n dev
+```

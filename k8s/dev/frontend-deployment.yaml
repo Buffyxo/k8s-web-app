@@ -1,0 +1,33 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: dev
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: buffyxo/frontend:dev
+        env:
+        - name: VUE_APP_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: frontend-config
+              key: VUE_APP_API_URL
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            memory: "300Mi"
+            cpu: "300m"
+          requests:
+            memory: "100Mi"
+            cpu: "100m"
