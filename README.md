@@ -464,8 +464,9 @@ kubectl get pods -n dev
 kubectl get svc -n dev
 ```
 
+## Step 4: Develop and Containerize Laravel API
 
-### 3.4 Create the Vue Frontend
+### 4.1 Create the Vue Frontend
 
 - Node.js and Vue CLI 
 ```
@@ -508,7 +509,7 @@ docker build -t YOUR-USERNAME/frontend:dev .
 docker push YOUR-USERNAME/frontend:dev
 ```
 
-### 3.5 Kubernetes Manifest files for Frontend Vue.js App (dev Namespace)
+### 4.2 Kubernetes Manifest files for Frontend Vue.js App (dev Namespace)
 
 - ConfigMap (k8s/dev/frontend-config.yaml)
 ```
