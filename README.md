@@ -336,10 +336,7 @@ cat << EOF > Dockerfile
 FROM php:8.2-fpm
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    libpng-dev libjpeg-dev libfreetype6-dev libxml2-dev \
-    libzip-dev unzip git \
-    && docker-php-ext-install pdo_mysql gd xml zip
+RUN apt-get update && apt-get install -y     libpng-dev libjpeg-dev libfreetype6-dev libxml2-dev     libzip-dev unzip git procps     && docker-php-ext-install pdo_mysql gd xml zip
 
 # Install Composer
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
@@ -349,9 +346,14 @@ WORKDIR /var/www
 
 # Copy application code
 COPY . .
+COPY .env .env
+COPY php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
 
 # Install Laravel dependencies
 RUN composer install --optimize-autoloader --no-dev
+
+# Generate APP_KEY
+RUN php artisan key:generate
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
@@ -361,12 +363,13 @@ EXPOSE 9000
 
 # Start PHP-FPM
 CMD ["php-fpm"]
+
 EOF
 ```
 
 - Create a .dockerignore 
 ```
-echo -e "vendor\nnode_modules\n.env" > .dockerignore
+echo -e "vendor\nnode_modules\nnginx.conf\nstorage/logs\n*.log" > .dockerignore
 ```
 
 - Build and push the container
@@ -375,9 +378,37 @@ docker build -t your-username/laravel:dev .
 docker push your-username/laravel:dev
 ```
 
+###### custom php-fpm.conf
+- /backend/php-fpm.conf
+```
+user = www-data
+group = www-data
+listen = 127.0.0.1:9000
+listen.owner = www-data
+listen.group = www-data
+pm = dynamic
+pm.max_children = 5
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3
+```
+
 ### 3.3 Kubernetes Manifest files for Laravel (dev Namespace)
 
-- Laravel Deployment (k8s/dev/laravel-deployment.yaml). Replace 'YOUR-USERNAME'
+- Laravel Config (k8s/dev/laravel-config.yaml)
+```
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: laravel-config
+  namespace: dev
+data:
+  APP_URL: "http://dev.DOMAIN-NAME.com/laravel"
+  DB_HOST: "mariadb-service.dev"
+  DB_DATABASE: "DATABASE-NAME"
+```
+
+- Laravel Deployment (k8s/dev/laravel-deployment.yaml). Replace 'USERNAME'
 
 ```
 apiVersion: apps/v1
@@ -396,23 +427,23 @@ spec:
     spec:
       containers:
       - name: laravel
-        image: YOUR-USERNAME/laravel:dev
+        image: USERNAME/laravel:dev-v5
         env:
         - name: APP_URL
           valueFrom:
-            secretKeyRef:
-              name: mariadb-secrets
-              key: app-url
+            configMapKeyRef:
+              name: laravel-config
+              key: APP_URL
         - name: DB_HOST
           valueFrom:
-            secretKeyRef:
-              name: mariadb-secrets
-              key: db-host
+            configMapKeyRef:
+              name: laravel-config
+              key: DB_HOST
         - name: DB_DATABASE
           valueFrom:
-            secretKeyRef:
-              name: mariadb-secrets
-              key: db-database
+            configMapKeyRef:
+              name: laravel-config
+              key: DB_DATABASE
         - name: DB_USERNAME
           valueFrom:
             secretKeyRef:
@@ -432,7 +463,66 @@ spec:
           requests:
             memory: "200Mi"
             cpu: "200m"
+
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: nginx.conf
+        resources:
+          limits:
+            memory: "100Mi"
+            cpu: "100m"
+          requests:
+            memory: "50Mi"
+            cpu: "50m"
+
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: laravel-nginx-config
+          items:
+          - key: nginx.conf
+            path: nginx.conf
+
 ```
+
+- Laravel Nginx Configuration (k8s/dev/laravel-nginx-config.yaml)
+```
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: laravel-nginx-config
+  namespace: dev
+data:
+  nginx.conf: |
+    server {
+      listen 80;
+      server_name localhost;
+      root /var/www/public;
+      index index.php index.html index.htm;
+
+      location / {
+        try_files $uri $uri/ /index.php?$query_string;
+      }
+
+      location ~ \.php$ {
+        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+      }
+
+      location ~ /\.ht {
+        deny all;
+      }
+    }
+
+```
+
 - Laravel Service (k8s/dev/laravel-service.yaml)
 
 ```
@@ -456,6 +546,7 @@ spec:
 kubectl apply -f k8s/dev/laravel-config.yaml -n dev
 kubectl apply -f k8s/dev/laravel-deployment.yaml -n dev
 kubectl apply -f k8s/dev/laravel-service.yaml -n dev
+kubectl apply -f k8s/dev/laravel-nginx-config.yaml -n -dev
 ```
 
 - Steps to verify
@@ -464,7 +555,7 @@ kubectl get pods -n dev
 kubectl get svc -n dev
 ```
 
-## Step 4: Develop and Containerize Laravel API
+## Step 4: Develop and Containerize Frontend
 
 ### 4.1 Create the Vue Frontend
 
@@ -543,7 +634,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: buffyxo/frontend:dev
+        image: USERNAME/frontend:dev
         env:
         - name: VUE_APP_API_URL
           valueFrom:
@@ -559,6 +650,7 @@ spec:
           requests:
             memory: "100Mi"
             cpu: "100m"
+
 
 ```
 
@@ -593,3 +685,43 @@ kubectl apply -f k8s/dev/frontend-service.yaml -n dev
 kubectl get pods -n dev
 kubectl get svc -n dev
 ```
+
+## Step 5: Set UP Ingress for the dev Namespace
+
+- Create Ingress Manifest (dev/ingress.yaml)
+```
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend-ingress
+  namespace: dev
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: dev.DOMAIN-NAME.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80
+      - path: /laravel(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: laravel-service
+            port:
+              number: 80
+
+```
+
+- Apply Ingress:
+```
+kubectl apply -f k8s/dev/ingress.yaml -n dev
+```
+
