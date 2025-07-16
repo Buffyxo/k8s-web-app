@@ -725,3 +725,61 @@ spec:
 kubectl apply -f k8s/dev/ingress.yaml -n dev
 ```
 
+## Step 6: Prod Namespace Setup and Deployment
+
+### 6.1 Copy and update manifests
+
+Copy the manifest files using `cp -r dev prod`, and update values for prod Namespace.
+
+#### 1. mariadb-deployment.yaml
+- namespace
+- MYSQL_DATABASE
+
+#### 2. laravel-config.yaml
+- namespace
+- APP_URL
+- DB_DATABASE
+
+#### 3. laravel-ngin-config.yaml
+- namespace
+
+#### 4. laravel-deployment.yaml, frontend-deployment.yaml
+- namespace
+- image
+
+#### 5. frontend-config.yaml
+- namespace
+- VUE_APP_API_URL
+
+#### 6. frontend-service.yaml, laravel-service.yaml, mariadb-service.yaml
+- namespace
+
+#### 7. ingress.yaml
+- host
+
+### 6.2 Create secrets for prod Namespace MariaDB credentials
+```
+kubectl create secret generic mariadb-secrets --namespace prod \
+--from-literal=db-user='YOUR-USER' \
+--from-literal=db-password='YOUR-PASSWORD' \ --from-literal=db-database='DATABASE-NAME' 
+```
+### 6.3 Deploy to prod 
+- Build the container:
+``` 
+cd backend
+docker build
+docker build -t YOUR-USERNAME/laravel:prod .
+docker push YOUR-USERNAME/laravel:prod
+cd ../frontend
+docker build -t YOUR-USERNAME/frontend:prod .
+docker push YOUR-USERNAME/frontend:prod
+```
+
+- Apply manifests:
+```
+kubectl apply -f /prod -n prod
+```
+
+- Verify pods and services are running
+
+- Test the domain using curl
