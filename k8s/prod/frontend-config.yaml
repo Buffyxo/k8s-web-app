@@ -1,0 +1,8 @@
+---
+apiVersion: v1
+data:
+  VUE_APP_API_URL: http://laravel-service.prod/laravel
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: prod
