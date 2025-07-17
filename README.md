@@ -102,6 +102,11 @@ nano /etc/containerd/config.toml
       SystemdCgroup = true
 
 ```
+
+###### 4. Restart Container
+```
+systemctl restart containerd
+```
 ---
 ###### **Other possible fixes:**
 ###### - If errors persist, try resetting kubeadm and follow the Cluster Initialization and Setup steps again
