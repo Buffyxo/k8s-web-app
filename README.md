@@ -525,7 +525,6 @@ data:
         deny all;
       }
     }
-
 ```
 
 - Laravel Service (k8s/dev/laravel-service.yaml)
