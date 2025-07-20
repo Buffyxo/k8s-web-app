@@ -541,7 +541,7 @@ spec:
   ports:
   - protocol: TCP
     port: 80
-    targetPort: 9000
+    targetPort: 80
   type: ClusterIP
 ```
 
