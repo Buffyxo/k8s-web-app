@@ -36,7 +36,7 @@ sysctl --system
 curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian bookworm stable" | tee /etc/apt/sources.list.d/docker.list
 apt-get update
-apt-get install docker-ce docker-ce-cli containerd.io=1.6.21-1
+apt-get install docker-ce docker-ce-cli containerd.io
 ```
 - **Required for Kubernetes:** Configure `systemd` cgroup driver in `/etc/docker/daemon.json`.
 ```
@@ -60,30 +60,6 @@ apt-get update
 apt-get install kubeadm kubelet kubectl
 ```
 
-### 1.4 Cluster Initialization and Setup
-- Initialize:
-```
-kubeadm init --pod-network-cidr=10.244.0.0/16
-```
-
-- Set up `kubectl`:
-```
-mkdir -p $HOME/.kube
-cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-chown $(id -u):$(id -g) $HOME/.kube/config
-```
-- Allow pods on master:
-```
-kubectl taint nodes --all node-role.kubernetes.io/control-plane-
-```
-#### Possible Errors:
----
-###### **If CRI error occur, follow these steps:**
-######  Verify CRI endpoint
-```
-crictl -r unix:///var/run/containerd/containerd.sock info
-
-```
 ###### 1. Generate config.toml if missing:
 ```
 mkdir -p /etc/containerd
@@ -103,10 +79,34 @@ nano /etc/containerd/config.toml
 
 ```
 
+######  Verify CRI endpoint
+```
+crictl -r unix:///var/run/containerd/containerd.sock info
+
+```
+
 ###### 4. Restart Container
 ```
 systemctl restart containerd
 ```
+
+### 1.4 Cluster Initialization and Setup
+- Initialize:
+```
+kubeadm init --pod-network-cidr=10.244.0.0/16
+```
+
+- Set up `kubectl`:
+```
+mkdir -p $HOME/.kube
+cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+chown $(id -u):$(id -g) $HOME/.kube/config
+```
+- Allow pods on master:
+```
+kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+```
+
 ---
 ###### **Other possible fixes:**
 ###### - If errors persist, try resetting kubeadm and follow the Cluster Initialization and Setup steps again
@@ -114,7 +114,6 @@ systemctl restart containerd
 kubeadm reset -f
 ```
 ###### - Check memory usage and that there is enough free memory (ensure memory is not cached):
-###### *APIs and containers may stop working when memory is unavailable*
 ```
 free -m
 sync; echo 3 | tee /proc/sys/vm/drop_caches
@@ -169,9 +168,10 @@ kubectl get svc -n ingress-nginx
 ```
 - Open the firewall ports
 ```
-sudo ufw allow <NODEPORT>
-sudo ufw allow 80
-sudo ufw allow 443
+ufw allow <NODEPORT>
+ufw allow 80
+ufw allow 443
+ufw allow 22
 ```
 
 ### 2.3 Secret for MariaDB credentials:
@@ -327,6 +327,7 @@ sed -i 's/DB_PORT=.*/DB_PORT=3306/' .env
 sed -i 's/DB_DATABASE=.*/DB_DATABASE=db-database/' .env
 sed -i 's/DB_USERNAME=.*/DB_USERNAME=db-user/' .env
 sed -i 's/DB_PASSWORD=.*/DB_PASSWORD=db-password/' .env
+sed -i 's/APP_URL=.*/APP_URL=http://domain.com/laravel/' .env
 ```
 
 - Generate the app key:
@@ -377,12 +378,6 @@ EOF
 echo -e "vendor\nnode_modules\nnginx.conf\nstorage/logs\n*.log" > .dockerignore
 ```
 
-- Build and push the container
-```
-docker build -t your-username/laravel:dev .
-docker push your-username/laravel:dev
-```
-
 ###### custom php-fpm.conf
 - /backend/php-fpm.conf
 ```
@@ -398,6 +393,14 @@ pm.min_spare_servers = 1
 pm.max_spare_servers = 3
 ```
 
+- Build and push the container
+```
+docker build -t your-username/laravel:dev .
+docker push your-username/laravel:dev
+```
+
+
+
 ### 3.3 Kubernetes Manifest files for Laravel (dev Namespace)
 
 - Laravel Config (k8s/dev/laravel-config.yaml)
@@ -408,7 +411,7 @@ metadata:
   name: laravel-config
   namespace: dev
 data:
-  APP_URL: "http://dev.DOMAIN-NAME.com/laravel"
+  APP_URL: "https://dev.DOMAIN-NAME.com/laravel"
   DB_HOST: "mariadb-service.dev"
   DB_DATABASE: "DATABASE-NAME"
 ```
@@ -527,6 +530,8 @@ data:
     }
 ```
 
+verify with `cat k8s/dev/laravel-nginx-config.yaml`.
+
 - Laravel Service (k8s/dev/laravel-service.yaml)
 
 ```
@@ -550,7 +555,7 @@ spec:
 kubectl apply -f k8s/dev/laravel-config.yaml -n dev
 kubectl apply -f k8s/dev/laravel-deployment.yaml -n dev
 kubectl apply -f k8s/dev/laravel-service.yaml -n dev
-kubectl apply -f k8s/dev/laravel-nginx-config.yaml -n -dev
+kubectl apply -f k8s/dev/laravel-nginx-config.yaml -n dev
 ```
 
 - Steps to verify
@@ -615,7 +620,7 @@ metadata:
 name: frontend-config
 namespace: dev
 data:
-VUE_APP_API_URL: "http://laravel-service.dev/laravel"
+VUE_APP_API_URL: "https://laravel-service.dev/laravel"
 EOF
 ```
 
